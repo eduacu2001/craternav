@@ -1,0 +1,29 @@
+{
+ "network": {
+  "day_median_m": 105,
+  "day_p95_m": 184,
+  "night_max_m": 1309,
+  "end_m": 139,
+  "dr_end_m": 48098,
+  "images": 462,
+  "images_used": 421,
+  "median_found": 8.0,
+  "median_used": 4.0
+ },
+ "oracle": {
+  "day_median_m": 36,
+  "day_p95_m": 97,
+  "night_max_m": 1951,
+  "end_m": 37,
+  "dr_end_m": 48098,
+  "images": 462,
+  "images_used": 425,
+  "median_found": 10.0,
+  "median_used": 6.0
+ },
+ "outside_3sigma": {
+  "r": 0.0,
+  "t": 0.0,
+  "n": 0.0
+ }
+}

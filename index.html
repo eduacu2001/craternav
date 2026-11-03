@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>CraterNav — Eduardo Acuña</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="Crater-based optical navigation in lunar orbit: a neural network finds the craters in every camera image, they are matched to a catalogue of 1.3 million craters, and a Kalman filter keeps the orbit within about 100 m, against 48 km without them.">
+<link rel="canonical" href="https://eduacu2001.github.io/craternav/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Eduardo Acuña">
+<meta property="og:title" content="Navigating around the Moon by its craters">
+<meta property="og:description" content="A neural network finds the craters in every camera image, they are matched to a catalogue of 1.3 million craters, and a Kalman filter keeps a lunar orbiter within about 100 m, against 48 km without them.">
+<meta property="og:url" content="https://eduacu2001.github.io/craternav/">
+<meta property="og:image" content="https://eduacu2001.github.io/craternav/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Camera view of lunar craters, circled where the neural network found them and where they were recognised in the catalogue">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Navigating around the Moon by its craters">
+<meta name="twitter:description" content="A neural network finds the craters in every camera image, they are matched to a catalogue of 1.3 million craters, and a Kalman filter keeps a lunar orbiter within about 100 m, against 48 km without them.">
+<meta name="twitter:image" content="https://eduacu2001.github.io/craternav/og.png">
+<meta name="theme-color" content="#e6e9e7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0f1417" media="(prefers-color-scheme: dark)">
+<meta name="author" content="Eduardo Acuña">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="bar">
+  <div class="wrap">
+    <a class="mark" href="#top">CraterNav</a>
+    <nav aria-label="Sections">
+      <a href="#flight">Flight replay</a>
+      <a href="#method">How it works</a>
+      <a href="#results">Results</a>
+      <a href="#about">About</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+  <section class="hero" id="flight">
+    <div class="wrap">
+      <div class="head">
+        <div>
+          <p class="kicker">Terrain-relative navigation in lunar orbit</p>
+          <h1>CraterNav</h1>
+        </div>
+        <div>
+          <p class="lede">A spacecraft 100 km above the Moon works out where it is from the craters it photographs, with no help from the ground.</p>
+          <p>Every 20 seconds of daylight the camera takes a picture. A neural network finds the craters in it, each one is matched to a catalogue of 1.3 million known craters, and a Kalman filter turns the matches into a position. Press play to fly three orbits, or drag the timeline.</p>
+        </div>
+      </div>
+
+      <div class="console" aria-label="Flight replay">
+        <div class="views">
+          <div class="scope" id="feed-wrap">
+            <canvas id="feed" width="768" height="768" aria-label="Camera image with the craters found"></canvas>
+            <div class="feed-night" id="feed-night" hidden>Night side. No images: the filter coasts on its orbit model.</div>
+            <span class="tag" id="feed-tag">Onboard camera</span>
+          </div>
+          <div class="scope" id="globe" aria-label="The orbit around the Moon">
+            <span class="tag">100 km polar orbit · drag to turn the Moon</span>
+            <button class="chip" id="follow" type="button" hidden>Follow the spacecraft</button>
+          </div>
+        </div>
+
+        <div class="transport">
+          <button class="btn primary" id="play" type="button">Play</button>
+          <input type="range" id="scrub" min="0" max="1" value="0" step="1" aria-label="Time in the flight">
+          <div class="seg" role="group" aria-label="Replay speed">
+            <button type="button" data-speed="1" aria-pressed="true">1×</button>
+            <button type="button" data-speed="3" aria-pressed="false">3×</button>
+            <button type="button" data-speed="8" aria-pressed="false">8×</button>
+          </div>
+        </div>
+
+        <div class="toggles" aria-label="Layers on the camera image">
+          <label><input type="checkbox" id="lay-found" checked> <span class="swatch sw-amber"></span> Craters found by the network</label>
+          <label><input type="checkbox" id="lay-ident" checked> <span class="swatch sw-teal"></span> Identified in the catalogue</label>
+          <label><input type="checkbox" id="lay-pred"> <span class="swatch sw-teal dashed"></span> Where the catalogue predicts them</label>
+        </div>
+
+        <dl class="readouts">
+          <div><dt>Time since start</dt><dd id="ro-time">–</dd></div>
+          <div><dt>Sun above horizon</dt><dd id="ro-sun">–</dd></div>
+          <div><dt>Craters found / identified</dt><dd id="ro-craters">–</dd></div>
+          <div class="est"><dt>Position error, crater navigation</dt><dd id="ro-err">–</dd></div>
+          <div class="drift"><dt>Without craters</dt><dd id="ro-dr">–</dd></div>
+        </dl>
+
+        <div class="chart-wrap">
+          <canvas id="chart" height="220" aria-label="Position error over time; click to jump"></canvas>
+        </div>
+        <div class="legend">
+          <span><i style="background: var(--amber)"></i>Crater navigation (filter estimate)</span>
+          <span><i style="background: var(--drift)"></i>Same filter, no craters (dead reckoning)</span>
+          <span><i style="background: var(--night); outline: 1px solid var(--rule)"></i>Night side, no images</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="method">
+    <div class="wrap">
+      <div class="prose" style="margin-bottom: clamp(36px, 5vw, 56px)">
+        <h2>How it works</h2>
+        <p>Four stages run every time the camera takes a picture. Each one below runs live in your browser with the project's own data.</p>
+      </div>
+
+      <article class="step" id="step-render">
+        <div class="prose">
+          <span class="num">1</span>
+          <h3>Render what the camera would see</h3>
+          <p>No camera has flown this orbit, so every image is rendered from the elevation model of NASA's Lunar Orbiter Laser Altimeter: 474 m per pixel, with cast shadows and the reflectance of lunar soil (the lunar-Lambert law).</p>
+          <p>Fly along the ground track from 84° S to 84° N with the Sun as it was during the flight, or take the Sun yourself. With the Sun low, every rim throws a shadow; with the Sun high, craters flatten into grey. The detector has to cope with both, so training images use Sun elevations from 5° to 70°.</p>
+          <div class="controls">
+            <div class="seg" role="group" aria-label="Terrain" id="ty-place">
+              <button type="button" data-place="orbit" aria-pressed="true">Under the orbit</button>
+              <button type="button" data-place="tycho" aria-pressed="false">Tycho</button>
+            </div>
+            <div class="slider" id="pos-row"><label for="pos">Latitude</label><input type="range" id="pos" min="-84" max="84" value="-55.3" step="0.1"><output id="pos-v">55° S</output></div>
+            <div class="row-btns" id="fly-row">
+              <button class="btn" type="button" id="fly">Fly north</button>
+              <label class="check"><input type="checkbox" id="sun-flight" checked> Sun as during the flight</label>
+            </div>
+            <div class="slider"><label for="sun-el">Sun elevation</label><input type="range" id="sun-el" min="2" max="75" value="15" step="1"><output id="sun-el-v">15°</output></div>
+            <div class="slider"><label for="sun-az">Sun direction</label><input type="range" id="sun-az" min="0" max="359" value="100" step="1"><output id="sun-az-v">E</output></div>
+            <div class="toggles">
+              <label><input type="checkbox" id="ty-shadow" checked> Cast shadows</label>
+              <label><input type="checkbox" id="ty-cat"> <span class="swatch sw-teal"></span> Catalogue craters</label>
+            </div>
+          </div>
+        </div>
+        <div class="scope" id="ty-scope">
+          <canvas id="tycho" width="768" height="768" aria-label="Rendered lunar terrain"></canvas>
+          <canvas id="locator" class="locator" width="120" height="120" aria-hidden="true"></canvas>
+          <div class="feed-night" id="ty-loading">Loading the terrain under the orbit</div>
+          <span class="tag" id="ty-tag">Under the orbit</span>
+          <span class="hint" id="ty-hint">Drag up or down to move along the orbit</span>
+        </div>
+      </article>
+
+      <article class="step" id="step-detect">
+        <div class="prose">
+          <span class="num">2</span>
+          <h3>Find the craters</h3>
+          <p>A compact U-Net with 0.49 million parameters turns each image into a map of crater rims. A ring-matching step then turns the rims into circles. The network was trained on 4,000 rendered views, on a desktop CPU in under two hours.</p>
+          <p>These six views come from twelve regions of the Moon that training never saw. Check compares the detections with the catalogue.</p>
+          <div class="controls">
+            <div class="seg" role="group" aria-label="What to show" id="det-mode">
+              <button type="button" data-mode="image" aria-pressed="false">Image</button>
+              <button type="button" data-mode="rims" aria-pressed="false">Network output</button>
+              <button type="button" data-mode="found" aria-pressed="true">Craters found</button>
+              <button type="button" data-mode="check" aria-pressed="false">Check</button>
+            </div>
+            <div class="thumbs" id="det-thumbs" aria-label="Example views"></div>
+            <p class="stat-line" id="det-stat"></p>
+          </div>
+        </div>
+        <div class="scope">
+          <canvas id="det" width="768" height="768" aria-label="Detector example"></canvas>
+          <span class="tag" id="det-tag"></span>
+        </div>
+      </article>
+
+      <article class="step" id="step-match">
+        <div class="prose">
+          <span class="num">3</span>
+          <h3>Recognise them</h3>
+          <p>From its current estimate the filter predicts where each catalogue crater should appear. An error in position shifts all the predictions by about the same amount. Every pair of a detection and a prediction of similar size votes for that shift, and the shift with the most votes wins. A wrong pair cannot win the vote on its own.</p>
+          <p>Drag the catalogue layer (dashed circles) to give the spacecraft a position error, and watch the vote find it.</p>
+          <div class="controls">
+            <div style="display:flex; gap:10px; flex-wrap:wrap">
+              <button class="btn" type="button" id="vote-random">Random 5 km error</button>
+              <button class="btn" type="button" id="vote-reset">No error</button>
+            </div>
+            <p class="stat-line" id="vote-stat"></p>
+          </div>
+        </div>
+        <div class="vote">
+          <div class="scope">
+            <canvas id="vote-img" width="768" height="768" aria-label="Detections and catalogue predictions; drag to shift the predictions"></canvas>
+            <span class="tag">Drag to add a position error</span>
+          </div>
+          <div class="scope">
+            <canvas id="vote-plot" width="512" height="768" aria-label="Votes for the shift between catalogue and image"></canvas>
+            <span class="tag">Votes: shift between prediction and detection</span>
+          </div>
+        </div>
+      </article>
+
+      <article class="step" id="step-filter">
+        <div class="prose">
+          <span class="num">4</span>
+          <h3>Estimate the orbit</h3>
+          <p>An extended Kalman filter propagates the orbit with the Moon's main gravity terms and updates it with the pixel position of every identified crater. The simulated truth also feels the Earth's tide, which the filter does not model.</p>
+          <p>Consecutive images overlap by two thirds, so most craters are seen two or three times, and about 190 m of each crater's position error belongs to the crater itself: it comes back every time the crater is seen. The filter therefore estimates each crater's catalogue error alongside the orbit, and never counts the same error twice. The result is a filter that knows how good it is: the error stays inside its own 3σ bounds.</p>
+          <div class="controls">
+            <div class="seg" role="group" aria-label="Direction" id="flt-axis">
+              <button type="button" data-a="t" aria-pressed="true">Along track</button>
+              <button type="button" data-a="n" aria-pressed="false">Cross track</button>
+              <button type="button" data-a="r" aria-pressed="false">Radial</button>
+            </div>
+            <p class="stat-line" id="flt-stat"></p>
+          </div>
+        </div>
+        <div class="chart-wrap">
+          <canvas id="flt" height="420" aria-label="Error and 3-sigma bounds over time"></canvas>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <section id="results">
+    <div class="wrap">
+      <div class="prose">
+        <h2>Results</h2>
+        <p id="res-intro">Three orbits at 100 km, 5 h 53 min, starting with a 1 km position error. The same run with an ideal detector (the catalogue itself, with pixel noise, misses and false alarms) shows what the matching and the filter can do on their own.</p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th></th><th>Trained network</th><th>Ideal detector</th></tr></thead>
+          <tbody id="res-table"></tbody>
+        </table>
+      </div>
+      <div class="two">
+        <div>
+          <h3>What limits the accuracy</h3>
+          <p>The map. The network finds crater centres to 0.8 px (about 260 m) in a single image, and most of that error repeats every time the same crater is seen, so averaging more images does not remove it. An ideal detector that sees every crater exactly where the catalogue puts it reaches 36 m.</p>
+        </div>
+        <div>
+          <h3>What happens at night</h3>
+          <p>Half of every orbit is dark and the camera sees nothing. The filter coasts on its gravity model and the error grows, up to a kilometre or so, then collapses within a few images when the Sun comes back. Without craters the error never comes back down: 48 km after six hours.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer id="about">
+  <div class="wrap">
+    <h3>About</h3>
+    <p>Built by Eduardo Acuña, aerospace engineer (MSc in Space Systems Operations, Universidad de Sevilla), as a personal project on vision-based navigation. Everything is simulated in Python (NumPy, SciPy, PyTorch); the page uses three.js for the globe. Open to opportunities in the space sector: <a href="mailto:eduacu2001@gmail.com">eduacu2001@gmail.com</a>.</p>
+    <p>Also by me: <a href="https://eduacu2001.github.io/">Correcting the Thermosphere</a>, my MSc thesis on a neural network that corrects NRLMSISE-00 for low-Earth-orbit prediction.</p>
+    <p>Data: Lunar Orbiter Laser Altimeter gridded elevation models (Smith et al., LRO LOLA, NASA Planetary Data System). Crater catalogue: Robbins, S. J. (2019), A new global database of lunar impact craters &gt;1–2 km, JGR Planets 124, 871–892.</p>
+  </div>
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
